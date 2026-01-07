@@ -33,6 +33,7 @@ video {
   height: 100vh;
   object-fit: cover;
   z-index: 0;
+  transform: scaleX(-1); /* 🔥 MIRROR */
 }
 
 /* HAND HUD */
@@ -41,6 +42,7 @@ video {
   inset: 0;
   z-index: 10;
   pointer-events: none;
+  transform: scaleX(-1); /* 🔥 MIRROR */
 }
 
 /* THREE */
@@ -55,7 +57,7 @@ video {
 
 <body>
 
-<div id="hud">
+<div id="hud" id="debug">
 IRON MODE – MOBILE<br>
 ✋ Hand Tracking Active
 </div>
@@ -94,11 +96,11 @@ scene.add(light);
 
 // Cursor
 const cursor = new THREE.Mesh(
-  new THREE.BoxGeometry(0.6,0.6,0.6),
+  new THREE.BoxGeometry(0.5,0.5,0.5),
   new THREE.MeshStandardMaterial({
     color:0x00ffff,
     emissive:0x00ffff,
-    emissiveIntensity:0.8
+    emissiveIntensity:1
   })
 );
 scene.add(cursor);
@@ -113,7 +115,7 @@ function animate(){
 }
 animate();
 
-// ================= CAMERA (MANUAL) =================
+// ================= CAMERA =================
 const video = document.getElementById("video");
 
 navigator.mediaDevices.getUserMedia({
@@ -132,16 +134,20 @@ const hands = new Hands({
 });
 
 hands.setOptions({
-  maxNumHands:1,
-  modelComplexity:1,
-  minDetectionConfidence:0.7,
-  minTrackingConfidence:0.7
+  maxNumHands: 1,
+  modelComplexity: 0,        // 🔥 أخف للموبايل
+  minDetectionConfidence: 0.5,
+  minTrackingConfidence: 0.5
 });
 
 let lastAdd = 0;
 
 hands.onResults(res=>{
   ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // DEBUG
+  console.log("Hands:", res.multiHandLandmarks?.length);
+
   if(!res.multiHandLandmarks) return;
 
   const lm = res.multiHandLandmarks[0];
@@ -159,19 +165,20 @@ hands.onResults(res=>{
 
   // Palm HUD
   ctx.beginPath();
-  ctx.arc(palm.x*canvas.width,palm.y*canvas.height,80,0,Math.PI*2);
+  ctx.arc(palm.x*canvas.width,palm.y*canvas.height,70,0,Math.PI*2);
   ctx.strokeStyle="cyan";
   ctx.lineWidth=2;
   ctx.stroke();
 
-  // Move cursor
-  cursor.position.x = (index.x-0.5)*6;
-  cursor.position.y = -(index.y-0.5)*4;
-  cursor.position.z = -index.z*5;
+  // Move cursor (محسّن)
+  cursor.position.x = (index.x - 0.5) * 6;
+  cursor.position.y = -(index.y - 0.5) * 4;
+  cursor.position.z = -index.z * 6;
 
-  // Pinch
-  const d = Math.hypot(index.x-thumb.x,index.y-thumb.y);
-  if(d<0.04 && Date.now()-lastAdd>500){
+  // Pinch = Create Cube
+  const d = Math.hypot(index.x - thumb.x, index.y - thumb.y);
+
+  if(d < 0.045 && Date.now() - lastAdd > 400){
     const cube = cursor.clone();
     cube.position.copy(cursor.position);
     voxels.add(cube);
@@ -181,7 +188,7 @@ hands.onResults(res=>{
 
 // LOOP
 async function loop(){
-  await hands.send({image:video});
+  await hands.send({image: video});
   requestAnimationFrame(loop);
 }
 video.onloadeddata = loop;
