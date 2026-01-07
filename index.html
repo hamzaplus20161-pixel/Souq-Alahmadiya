@@ -14,6 +14,7 @@ body {
   font-family: Arial;
 }
 
+/* HUD */
 #hud {
   position: fixed;
   top: 15px;
@@ -21,19 +22,32 @@ body {
   color: cyan;
   font-size: 16px;
   text-shadow: 0 0 10px cyan;
-  z-index: 10;
+  z-index: 30;
 }
 
-video, canvas {
+/* CAMERA */
+video {
   position: fixed;
-  top: 0;
-  left: 0;
+  inset: 0;
   width: 100vw;
   height: 100vh;
   object-fit: cover;
+  z-index: 0;
 }
 
-canvas {
+/* HAND HUD */
+#overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* THREE */
+#three {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
   pointer-events: none;
 }
 </style>
@@ -46,261 +60,138 @@ IRON MODE – MOBILE<br>
 ✋ Hand Tracking Active
 </div>
 
-<video id="video" autoplay playsinline></video>
+<video id="video" autoplay playsinline muted></video>
 <canvas id="overlay"></canvas>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
 <script>
-// ===== CANVAS FOR HAND HUD =====
+// ================= CANVAS =================
 const canvas = document.getElementById("overlay");
 const ctx = canvas.getContext("2d");
-canvas.width = innerWidth;
-canvas.height = innerHeight;
 
-// ===== THREE =====
+function resize() {
+  canvas.width = innerWidth;
+  canvas.height = innerHeight;
+}
+resize();
+
+// ================= THREE =================
 const scene = new THREE.Scene();
 
-const camera3D = new THREE.PerspectiveCamera(
-  75,
-  innerWidth / innerHeight,
-  0.1,
-  1000
-);
-camera3D.position.z = 6;
+const cam3D = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
+cam3D.position.z = 6;
 
-const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+const renderer = new THREE.WebGLRenderer({ alpha:true, antialias:true });
 renderer.setSize(innerWidth, innerHeight);
+renderer.domElement.id = "three";
 document.body.appendChild(renderer.domElement);
 
-// Light
 const light = new THREE.PointLight(0x00ffff, 2, 100);
-light.position.set(0, 5, 10);
+light.position.set(0,5,10);
 scene.add(light);
 
 // Cursor
-const geo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
-const mat = new THREE.MeshStandardMaterial({
-  color: 0x00ffff,
-  emissive: 0x00ffff,
-  emissiveIntensity: 0.7
-});
-const cursor = new THREE.Mesh(geo, mat);
+const cursor = new THREE.Mesh(
+  new THREE.BoxGeometry(0.6,0.6,0.6),
+  new THREE.MeshStandardMaterial({
+    color:0x00ffff,
+    emissive:0x00ffff,
+    emissiveIntensity:0.8
+  })
+);
 scene.add(cursor);
 
 // Voxels
 const voxels = new THREE.Group();
 scene.add(voxels);
 
-function animate() {
+function animate(){
   requestAnimationFrame(animate);
-  renderer.render(scene, camera3D);
+  renderer.render(scene, cam3D);
 }
 animate();
 
-// ===== MEDIAPIPE =====
+// ================= CAMERA (MANUAL) =================
 const video = document.getElementById("video");
 
+navigator.mediaDevices.getUserMedia({
+  video: { facingMode: "user" },
+  audio: false
+}).then(stream=>{
+  video.srcObject = stream;
+  video.play();
+}).catch(e=>{
+  alert("Camera Error: " + e.message);
+});
+
+// ================= MEDIAPIPE =================
 const hands = new Hands({
-  locateFile: file =>
-    `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+  locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
 });
 
 hands.setOptions({
-  maxNumHands: 1,
-  modelComplexity: 1,
-  minDetectionConfidence: 0.7,
-  minTrackingConfidence: 0.7
+  maxNumHands:1,
+  modelComplexity:1,
+  minDetectionConfidence:0.7,
+  minTrackingConfidence:0.7
 });
 
 let lastAdd = 0;
 
-hands.onResults(results => {
+hands.onResults(res=>{
   ctx.clearRect(0,0,canvas.width,canvas.height);
+  if(!res.multiHandLandmarks) return;
 
-  if (!results.multiHandLandmarks) return;
-
-  const lm = results.multiHandLandmarks[0];
+  const lm = res.multiHandLandmarks[0];
   const index = lm[8];
   const thumb = lm[4];
   const palm = lm[0];
 
-  // ==== Draw hand points ====
-  lm.forEach(p => {
+  // Draw points
+  lm.forEach(p=>{
     ctx.beginPath();
-    ctx.arc(p.x * canvas.width, p.y * canvas.height, 5, 0, Math.PI*2);
-    ctx.fillStyle = "cyan";
+    ctx.arc(p.x*canvas.width,p.y*canvas.height,5,0,Math.PI*2);
+    ctx.fillStyle="cyan";
     ctx.fill();
   });
 
-  // ==== Palm HUD circle ====
+  // Palm HUD
   ctx.beginPath();
-  ctx.arc(palm.x * canvas.width, palm.y * canvas.height, 80, 0, Math.PI*2);
-  ctx.strokeStyle = "cyan";
-  ctx.lineWidth = 2;
+  ctx.arc(palm.x*canvas.width,palm.y*canvas.height,80,0,Math.PI*2);
+  ctx.strokeStyle="cyan";
+  ctx.lineWidth=2;
   ctx.stroke();
 
-  // ==== Move 3D cursor ====
-  cursor.position.x = (index.x - 0.5) * 6;
-  cursor.position.y = -(index.y - 0.5) * 4;
-  cursor.position.z = -index.z * 5;
-
-  // ==== Pinch to add voxel ====
-  const dist = Math.hypot(index.x - thumb.x, index.y - thumb.y);
-  if (dist < 0.04 && Date.now() - lastAdd > 500) {
-    addVoxel();
-    lastAdd = Date.now();
-  }
-});
-
-function addVoxel() {
-  const cube = cursor.clone();
-  cube.position.set(
-    Math.round(cursor.position.x),
-    Math.round(cursor.position.y),
-    Math.round(cursor.position.z)
-  );
-  voxels.add(cube);
-}
-
-// Camera
-const cam = new Camera(video, {
-  onFrame: async () => {
-    await hands.send({ image: video });
-  },
-  width: 1280,
-  height: 720,
-  facingMode: "user"
-});
-cam.start();
-
-// Resize
-addEventListener("resize", () => {
-  canvas.width = innerWidth;
-  canvas.height = innerHeight;
-  camera3D.aspect = innerWidth / innerHeight;
-  camera3D.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
-</script>
-
-</body>
-</html>✋ Hand Tracking Active
-</div>
-
-<video id="video" autoplay playsinline></video>
-
-<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-
-<script>
-// ===== THREE =====
-const scene = new THREE.Scene();
-
-const camera3D = new THREE.PerspectiveCamera(
-  75,
-  window.innerWidth / window.innerHeight,
-  0.1,
-  1000
-);
-camera3D.position.z = 6;
-
-const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
-
-// Light
-const light = new THREE.PointLight(0x00ffff, 2, 100);
-light.position.set(0, 5, 10);
-scene.add(light);
-
-// Cursor
-const geo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
-const mat = new THREE.MeshStandardMaterial({
-  color: 0x00ffff,
-  emissive: 0x00ffff,
-  emissiveIntensity: 0.7
-});
-const cursor = new THREE.Mesh(geo, mat);
-scene.add(cursor);
-
-// Voxels
-const voxels = new THREE.Group();
-scene.add(voxels);
-
-function animate() {
-  requestAnimationFrame(animate);
-  renderer.render(scene, camera3D);
-}
-animate();
-
-// ===== MEDIAPIPE =====
-const video = document.getElementById("video");
-
-const hands = new Hands({
-  locateFile: file =>
-    `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-});
-
-hands.setOptions({
-  maxNumHands: 1,
-  modelComplexity: 1,
-  minDetectionConfidence: 0.7,
-  minTrackingConfidence: 0.7
-});
-
-let lastAdd = 0;
-
-hands.onResults(results => {
-  if (!results.multiHandLandmarks) return;
-
-  const lm = results.multiHandLandmarks[0];
-  const index = lm[8];
-  const thumb = lm[4];
-
   // Move cursor
-  cursor.position.x = (index.x - 0.5) * 6;
-  cursor.position.y = -(index.y - 0.5) * 4;
-  cursor.position.z = -index.z * 5;
+  cursor.position.x = (index.x-0.5)*6;
+  cursor.position.y = -(index.y-0.5)*4;
+  cursor.position.z = -index.z*5;
 
-  // Pinch to add block
-  const dist = Math.hypot(index.x - thumb.x, index.y - thumb.y);
-  if (dist < 0.04 && Date.now() - lastAdd > 500) {
-    addVoxel();
+  // Pinch
+  const d = Math.hypot(index.x-thumb.x,index.y-thumb.y);
+  if(d<0.04 && Date.now()-lastAdd>500){
+    const cube = cursor.clone();
+    cube.position.copy(cursor.position);
+    voxels.add(cube);
     lastAdd = Date.now();
   }
 });
 
-function addVoxel() {
-  const cube = cursor.clone();
-  cube.position.set(
-    Math.round(cursor.position.x),
-    Math.round(cursor.position.y),
-    Math.round(cursor.position.z)
-  );
-  voxels.add(cube);
+// LOOP
+async function loop(){
+  await hands.send({image:video});
+  requestAnimationFrame(loop);
 }
-
-// Camera (IMPORTANT)
-const cam = new Camera(video, {
-  onFrame: async () => {
-    await hands.send({ image: video });
-  },
-  width: 640,
-  height: 480,
-  facingMode: "user" // front camera
-});
-
-cam.start();
+video.onloadeddata = loop;
 
 // Resize
-window.addEventListener("resize", () => {
-  camera3D.aspect = window.innerWidth / window.innerHeight;
-  camera3D.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+addEventListener("resize",()=>{
+  resize();
+  cam3D.aspect = innerWidth/innerHeight;
+  cam3D.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
 });
 </script>
 
